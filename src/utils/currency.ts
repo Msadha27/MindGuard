@@ -1,6 +1,8 @@
-export const formatINR = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
+export function formatINR(amount: number): string {
+    return amount.toLocaleString('en-IN', {
         style: 'currency',
         currency: 'INR',
-    }).format(amount);
-};
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+}

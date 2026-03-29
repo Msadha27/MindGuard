@@ -1,117 +1,79 @@
-import { TrendingUp, TrendingDown, Calendar, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, TrendingDown, Trash2, Pencil } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import type { Database } from '../lib/database.types';
 import { formatINR } from '../utils/currency';
+import { EditTransactionModal } from './EditTransactionModal';
 
-type TransactionRow = Database['public']['Tables']['transactions']['Row'];
+const CAT_EMOJI: Record<string, string> = {
+  Snacks: '🍿', Food: '🍽️', Academics: '📚', Beauty: '💄', Household: '🏠',
+  Transport: '🚌', Entertainment: '🎬', Health: '💊',
+  'Pocket Money': '👝', Salary: '💼', Freelance: '💻', 'Side Income': '🛒',
+  Scholarship: '🎓', 'Part-time Job': '🕐', Investment: '📈', Gift: '🎁',
+  Selling: '🏷️', 'Family Transfer': '🏠', 'Wallet Top-Up': '💳', 'Savings Top-Up': '🏦',
+};
 
-interface TransactionListProps {
-  transactions: TransactionRow[];
-  onDelete?: () => void; // 🔥 important
-}
-
-export function TransactionList({ transactions, onDelete }: TransactionListProps) {
+export function TransactionList({ transactions, onDelete, onEdit }: { transactions: any[]; onDelete?: () => void; onEdit?: () => void; }) {
   const { user } = useAuth();
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
 
-  const handleDelete = async (transaction: TransactionRow) => {
-    if (!user) return;
-
-    const confirmDelete = confirm("Are you sure you want to delete this transaction?");
-    if (!confirmDelete) return;
-
+  const handleDelete = async (t: any) => {
+    if (!user || !confirm('Delete this transaction? Balance will be reversed.')) return;
     try {
-      // 🔥 Get wallet
-      const { data: wallet } = await supabase
-        .from('wallet')
-        .select()
-        .eq('user_id', user.id)
-        .maybeSingle();
-
+      const { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
       if (!wallet) return;
-
-      let newBalance = Number(wallet.main_balance);
-
-      // 🔥 Reverse transaction
-      if (transaction.type === 'income') {
-        newBalance -= Number(transaction.amount);
-      } else {
-        newBalance += Number(transaction.amount);
-      }
-
-      // 🔥 Update wallet
-      await supabase
-        .from('wallet')
-        .update({
-          main_balance: newBalance,
-        })
-        .eq('user_id', user.id);
-
-      // 🔥 Delete transaction
-      await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', transaction.id);
-
-      alert("Transaction deleted ✅");
-
-      onDelete && onDelete();
-
-    } catch (err) {
-      alert("Error deleting transaction");
-    }
+      const newBal = t.type === 'income' ? Number(wallet.main_balance) - Number(t.amount) : Number(wallet.main_balance) + Number(t.amount);
+      await supabase.from('wallet').update({ main_balance: newBal }).eq('user_id', user.id);
+      await supabase.from('transactions').delete().eq('id', t.id);
+      onDelete?.();
+    } catch { alert('Error deleting'); }
   };
 
-  if (transactions.length === 0) {
-    return <p>No transactions yet</p>;
-  }
+  if (transactions.length === 0) return (
+    <div className="bg-[#111827] rounded-xl p-8 text-center border border-white/5">
+      <p className="text-4xl mb-3">💸</p>
+      <p className="text-gray-400 font-medium">No transactions yet</p>
+      <p className="text-gray-600 text-sm mt-1">Add your first income or expense!</p>
+    </div>
+  );
 
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-6 border-b">
-        <h2 className="text-xl font-bold">Recent Transactions</h2>
-      </div>
-
-      {transactions.slice(0, 10).map((transaction) => (
-        <div key={transaction.id} className="p-6 flex justify-between items-center">
-
-          {/* LEFT */}
-          <div className="flex items-center gap-4">
-            <div>
-              {transaction.type === 'income'
-                ? <TrendingUp className="text-green-600" />
-                : <TrendingDown className="text-red-600" />}
-            </div>
-
-            <div>
-              <p className="font-semibold">{transaction.category}</p>
-              <p className="text-sm text-gray-500">
-                {new Date(transaction.date).toDateString()}
+    <>
+      <div className="bg-[#111827] rounded-xl overflow-hidden border border-white/5 divide-y divide-white/5">
+        {transactions.map((t) => {
+          const emoji = CAT_EMOJI[t.category];
+          return (
+            <div key={t.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition group">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg ${t.type === 'income' ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
+                {emoji ? <span>{emoji}</span> : t.type === 'income' ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-semibold leading-tight">{t.category}</p>
+                {t.description && t.description !== t.category && <p className="text-gray-500 text-xs truncate mt-0.5">{t.description}</p>}
+                <p className="text-gray-600 text-xs mt-0.5">{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+              </div>
+              <p className={`font-bold text-sm flex-shrink-0 ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {t.type === 'income' ? '+' : '-'}{formatINR(Number(t.amount))}
               </p>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+                <button onClick={() => setEditingTransaction(t)} title="Edit"
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => handleDelete(t)} title="Delete"
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-
-          {/* RIGHT */}
-          <div className="flex items-center gap-4">
-
-            <p className={`font-bold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-              }`}>
-              {transaction.type === 'income' ? '+' : '-'}
-              {formatINR(Number(transaction.amount))}
-            </p>
-
-            {/* 🔥 DELETE BUTTON */}
-            <button
-              onClick={() => handleDelete(transaction)}
-              className="text-red-500 hover:text-red-700"
-            >
-              <Trash2 />
-            </button>
-
-          </div>
-
-        </div>
-      ))}
-    </div>
+          );
+        })}
+      </div>
+      {editingTransaction && (
+        <EditTransactionModal transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onComplete={() => { setEditingTransaction(null); onDelete?.(); }} />
+      )}
+    </>
   );
 }
