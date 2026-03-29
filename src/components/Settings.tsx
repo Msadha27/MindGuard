@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { X, Target, TrendingUp } from 'lucide-react';
+import { X, Target, TrendingUp, RefreshCcw } from 'lucide-react';
 
 const YOUR_CATEGORIES = [
   { key: 'Snacks', emoji: '🍿' },
@@ -61,6 +61,40 @@ export function Settings({ settings, onClose, onComplete, inline }: SettingsProp
     } finally { setLoading(false); }
   };
 
+  const handleResetAccount = async () => {
+    if (!user) return;
+    const confirm1 = window.confirm('ARE YOU SURE? This will permanently delete ALL your transactions and reset your balances to zero.');
+    if (!confirm1) return;
+    const confirm2 = window.confirm('LAST WARNING: This action cannot be undone. Are you absolutely certain you want to start fresh?');
+    if (!confirm2) return;
+
+    setError(''); setLoading(true);
+    try {
+      // 1. Delete all transactions
+      await supabase.from('transactions').delete().eq('user_id', user.id);
+      
+      // 2. Reset wallet
+      await supabase.from('wallet').update({
+        main_balance: 0,
+        savings_balance: 0,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', user.id);
+
+      // 3. Optional: Reset settings to default
+      await supabase.from('settings').update({
+        spending_limit: 10000,
+        savings_goal: 50000,
+        category_limits: {},
+      }).eq('user_id', user.id);
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      onComplete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error resetting account');
+    } finally { setLoading(false); }
+  };
+
   const inner = (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Overall Limits */}
@@ -108,6 +142,23 @@ export function Settings({ settings, onClose, onComplete, inline }: SettingsProp
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="pt-4 border-t border-white/5 space-y-4">
+        <div>
+          <h3 className="text-red-400 font-semibold text-sm uppercase tracking-wide">Danger Zone</h3>
+          <p className="text-gray-600 text-xs mt-0.5">Sensitive actions that affect all your data</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleResetAccount}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-sm font-bold hover:bg-red-500/20 transition disabled:opacity-50"
+        >
+          <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Reset All Account Data
+        </button>
       </div>
 
       {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm">{error}</div>}

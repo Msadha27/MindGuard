@@ -235,7 +235,7 @@ export function SavingsManager({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto text-gray-900">
         <div className="bg-amber-600 text-white p-6 rounded-t-2xl flex justify-between items-center">
           <div className="flex items-center space-x-3">
             <Lock className="w-8 h-8" />

@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LandingPage } from './pages/landing page';
-import { Dashboard } from './components/Dashboard';
+import Dashboard from './components/Dashboard';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { useAuth } from './contexts/AuthContext';
@@ -11,6 +11,7 @@ function ProtectedRoute({ children }: any) {
 }
 
 function App() {
+  const { user } = useAuth();
   return (
     <BrowserRouter>
       <Routes>
@@ -23,7 +24,7 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Dashboard user={user} />
             </ProtectedRoute>
           }
         />

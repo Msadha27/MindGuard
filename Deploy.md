@@ -1,217 +1,118 @@
-# 🚀 MindGuard Money — Publish as an App
+# 🚀 MindGuard Money — Full Deployment Guide
 
-This guide covers everything: adding the edit feature, deploying live on Vercel, and making it installable like a real app on your phone.
+## Step 1: Push to GitHub
 
----
-
-## ✏️ Step 1 — Add the Edit Feature
-
-Copy these two new files into your `src/components/` folder:
-
-| File | What it does |
-|---|---|
-| `EditTransactionModal.tsx` | Full edit form — amount, category, note, date |
-| `TransactionList.tsx` | Replace old one — adds ✏️ Edit button next to 🗑️ Delete |
-
-**How editing works:**
-- Hover any transaction → ✏️ pencil icon appears
-- Change amount, category, note, or date
-- Balance is automatically corrected (difference applied to wallet)
-- Works for both income and expenses
-
----
-
-## 🌐 Step 2 — Deploy on Vercel (Free, Takes 5 Minutes)
-
-### Prerequisites
-- Your project is on **GitHub** (or GitLab/Bitbucket)
-- You have a **Supabase** project with your tables set up
-
-### Deploy Steps
-
-**1. Push your code to GitHub**
 ```bash
+# If you haven't already:
 git init
 git add .
-git commit -m "MindGuard Money v1"
+git commit -m "feat: MindGuard Money v2 - behavior-based finance tracker"
+
+# Create a new repo on github.com (call it: mindguard-money)
+# Then:
 git remote add origin https://github.com/YOUR_USERNAME/mindguard-money.git
+git branch -M main
 git push -u origin main
 ```
 
-**2. Go to [vercel.com](https://vercel.com)**
-- Sign up / log in with GitHub
-- Click **"Add New Project"**
-- Select your `mindguard-money` repository
-- Click **Import**
+---
 
-**3. Set Environment Variables in Vercel**
+## Step 2: Deploy Frontend on Vercel (Free)
 
-Before clicking Deploy, scroll down to **Environment Variables** and add:
-
-| Key | Value |
-|---|---|
-| `VITE_SUPABASE_URL` | Your Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
-
-> Find these in your Supabase dashboard → **Project Settings → API**
-
-**4. Click Deploy** → Vercel builds and gives you a live URL like:
-```
-https://mindguard-money.vercel.app
-```
-
-**5. Auto-deploy on every push**
-After setup, every `git push` auto-deploys — no manual steps needed.
+1. Go to → **https://vercel.com** → Sign up with GitHub
+2. Click **"Add New Project"**
+3. Import your `mindguard-money` repo
+4. Set these **Environment Variables** before deploying:
+   - `VITE_SUPABASE_URL` → your Supabase project URL
+   - `VITE_SUPABASE_ANON_KEY` → your Supabase anon key
+5. Click **Deploy** → takes ~2 minutes
+6. You'll get a URL like: `https://mindguard-money.vercel.app` ✅
 
 ---
 
-## 📱 Step 3 — Make it Installable as a Phone App (PWA)
+## Step 3: Add Your Vercel URL to Supabase
 
-This turns your website into an app users can install from their browser — no App Store needed.
-
-### A. Add `manifest.json`
-
-Create `public/manifest.json`:
-
-```json
-{
-  "name": "MindGuard Money",
-  "short_name": "MindGuard",
-  "description": "Your personal financial guardian",
-  "start_url": "/dashboard",
-  "display": "standalone",
-  "background_color": "#0b0f19",
-  "theme_color": "#10b981",
-  "orientation": "portrait",
-  "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
-}
-```
-
-### B. Update `index.html`
-
-Add these lines inside `<head>`:
-
-```html
-<link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#10b981" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="MindGuard" />
-<link rel="apple-touch-icon" href="/icon-192.png" />
-```
-
-### C. Create App Icons
-
-Create two PNG icons and put them in your `public/` folder:
-- `icon-192.png` — 192×192 pixels
-- `icon-512.png` — 512×512 pixels
-
-> **Quick way:** Use [favicon.io](https://favicon.io) or [realfavicongenerator.net](https://realfavicongenerator.net) to generate icons from text or an image.
-
-### D. Add a Service Worker (optional but recommended)
-
-Install the Vite PWA plugin:
-```bash
-npm install -D vite-plugin-pwa
-```
-
-Update `vite.config.ts`:
-```ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
-
-export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: {
-        name: 'MindGuard Money',
-        short_name: 'MindGuard',
-        theme_color: '#10b981',
-        background_color: '#0b0f19',
-        display: 'standalone',
-        start_url: '/dashboard',
-        icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-        ],
-      },
-    }),
-  ],
-});
-```
-
----
-
-## 📲 Step 4 — Install on Your Phone
-
-### Android (Chrome)
-1. Open your Vercel URL in Chrome
-2. Tap the **⋮ menu** (3 dots) → **"Add to Home screen"**
-3. Tap **Add** → App appears on your home screen!
-
-### iPhone (Safari)
-1. Open your Vercel URL in Safari
-2. Tap the **Share button** (box with arrow)
-3. Scroll down → tap **"Add to Home Screen"**
-4. Tap **Add** → Done!
-
----
-
-## 🔒 Step 5 — Supabase Auth Settings (Important!)
-
-After deploying, add your Vercel URL to Supabase's allowed URLs:
-
-1. Go to **Supabase Dashboard → Authentication → URL Configuration**
-2. Add your Vercel URL to **Site URL**:
-   ```
-   https://mindguard-money.vercel.app
-   ```
-3. Add to **Redirect URLs**:
+1. Go to **Supabase Dashboard** → your project → **Authentication → URL Configuration**
+2. Add your Vercel URL to **Redirect URLs**:
    ```
    https://mindguard-money.vercel.app/**
    ```
-4. Save — otherwise login/signup will fail on the live site
+3. Also add it to **Site URL**
 
 ---
 
-## 🎯 Final Checklist
+## Step 4: Run the SQL Migration (if not done yet)
 
-- [ ] `EditTransactionModal.tsx` added to `src/components/`
-- [ ] `TransactionList.tsx` replaced (has edit + delete)
-- [ ] Code pushed to GitHub
-- [ ] Vercel project created with env variables
-- [ ] Supabase redirect URLs updated
-- [ ] `manifest.json` created in `public/`
-- [ ] `index.html` updated with PWA meta tags
-- [ ] Icons created (192px + 512px)
-- [ ] Tested "Add to Home Screen" on phone
+In Supabase → **SQL Editor**, paste and run:
+
+```sql
+-- Wallet table
+create table if not exists wallet (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users,
+  main_balance numeric default 0,
+  savings_balance numeric default 0
+);
+
+-- Transactions table
+create table if not exists transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users,
+  amount numeric not null,
+  type text not null,
+  category text not null,
+  note text,
+  date timestamptz default now()
+);
+
+-- Settings table
+create table if not exists settings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users,
+  spending_limit numeric default 10000,
+  savings_goal numeric default 50000,
+  category_limits jsonb default '[]'
+);
+
+-- RLS Policies
+alter table wallet enable row level security;
+alter table transactions enable row level security;
+alter table settings enable row level security;
+
+create policy "Users own their wallet" on wallet for all using (auth.uid() = user_id);
+create policy "Users own their transactions" on transactions for all using (auth.uid() = user_id);
+create policy "Users own their settings" on settings for all using (auth.uid() = user_id);
+```
 
 ---
 
-## 🆘 Common Issues
+## Step 5: Install as Mobile App (PWA)
 
-| Problem | Fix |
+### Android (Chrome):
+1. Open your Vercel URL in Chrome
+2. Tap the **⋮ menu** → **"Add to Home Screen"**
+3. Tap **Add** → app icon appears on your home screen ✅
+
+### iPhone (Safari):
+1. Open your Vercel URL in Safari
+2. Tap the **Share button** (□↑)
+3. Scroll down → **"Add to Home Screen"**
+4. Tap **Add** → app icon appears ✅
+
+---
+
+## ✅ What You Now Have
+
+| Feature | Status |
 |---|---|
-| Login redirects to wrong URL | Add your Vercel URL to Supabase redirect URLs |
-| Build fails on Vercel | Check env variables are set correctly |
-| App not installable | Make sure `manifest.json` is in `public/` and `index.html` links it |
-| Balance wrong after edit | Make sure old `TransactionList.tsx` is fully replaced |
-| White screen on phone | Check browser console for errors, usually a missing env var |
-
----
-
-Your app is now live, installable, and fully functional! 🎉
+| Main Balance (separate card) | ✅ |
+| Savings Balance (separate card) | ✅ |
+| Per-category monthly limits | ✅ |
+| Edit any transaction | ✅ |
+| Student income categories | ✅ |
+| Custom "Other" expense input | ✅ |
+| Multi-step savings withdrawal | ✅ |
+| Overspending alerts | ✅ |
+| AI Coach | ✅ |
+| Installable as mobile app (PWA) | ✅ |
+| Free hosting on Vercel | ✅ |

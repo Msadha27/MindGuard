@@ -1,490 +1,457 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import {
-  LayoutDashboard, ArrowDownCircle, ArrowUpCircle,
-  PiggyBank, Settings as SettingsIcon, LogOut,
-  TrendingUp, TrendingDown, Wallet, Menu, X,
-  Plus, Target, Bot
-} from 'lucide-react';
-import { TransactionForm } from './TransactionForm';
-import { TransactionList } from './TransactionList';
-import { SpendingChart } from './SpendingChart';
-import { CategoryPieChart } from './CategoryPieChart';
-import { AICoach } from './AICoach';
-import { SavingsManager } from './SavingsManager';
-import { Settings } from './Settings';
-import { QuickTopUp } from './QuickTopUp';
-import { formatINR } from '../utils/currency';
+import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
+import { formatINR as formatCurrency } from "../utils/currency";
+import { CATEGORIES } from "../lib/categories";
+import { QuickTopUp } from "./QuickTopUp";
+import { TransactionForm } from "./TransactionForm";
+import { TransactionList } from "./TransactionList";
+import { SpendingChart } from "./SpendingChart";
+import { CategoryPieChart } from "./CategoryPieChart";
+import { SavingsManager } from "./SavingsManager";
+import { Settings } from "./Settings";
+import { EditTransactionModal } from "./EditTransactionModal";
 
-type Page = 'dashboard' | 'transactions' | 'analytics' | 'savings' | 'ai' | 'settings';
+type Page = "dashboard" | "transactions" | "analytics" | "savings" | "settings";
 
-export function Dashboard() {
-  const { user, signOut } = useAuth();
-  const [wallet, setWallet] = useState<any>(null);
+interface WalletData {
+  id: string;
+  user_id: string;
+  main_balance: number;
+  savings_balance: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Removed CategoryLimit interface as we'll use Record<string, number>
+
+export default function Dashboard({ user }: { user: any }) {
+  const [wallet, setWallet] = useState<WalletData>({ 
+    id: "", 
+    user_id: user?.id || "", 
+    main_balance: 0, 
+    savings_balance: 0, 
+    created_at: "", 
+    updated_at: "" 
+  });
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>(null);
-  const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [categoryLimits, setCategoryLimits] = useState<Record<string, number>>({});
+  const [spendingLimit, setSpendingLimit] = useState(10000);
+  const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const [showTransactionForm, setShowTransactionForm] = useState(false);
-  const [transactionType, setTransactionType] = useState<'income' | 'expense'>('income');
-  const [showSavingsManager, setShowSavingsManager] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showTopUp, setShowTopUp] = useState<'main' | 'savings' | null>(null);
+  const [showTopUp, setShowTopUp] = useState<"main" | "savings" | null>(null);
+  const [showAddIncome, setShowAddIncome] = useState(false);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
+  const [overBudgetCategories, setOverBudgetCategories] = useState<string[]>([]);
 
   useEffect(() => {
-    if (user) {
-      initUser();
-      loadData();
+    fetchAll();
+  }, []);
+
+  async function fetchAll() {
+    await Promise.all([fetchWallet(), fetchTransactions(), fetchSettings()]);
+  }
+
+  async function fetchWallet() {
+    const { data } = await supabase.from("wallet").select("*").single();
+    if (data) setWallet(data);
+  }
+
+  async function fetchTransactions() {
+    const { data } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(100);
+    if (data) {
+      setTransactions(data);
+      checkCategoryBudgets(data);
     }
-  }, [user]);
+  }
 
-  const initUser = async () => {
-    if (!user) return;
-    const { data: w } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
-    if (!w) await supabase.from('wallet').insert({ user_id: user.id, main_balance: 0, savings_balance: 0 });
-    const { data: s } = await supabase.from('settings').select().eq('user_id', user.id).maybeSingle();
-    if (!s) await supabase.from('settings').insert({ user_id: user.id, spending_limit: 10000, savings_goal: 50000, category_limits: {} });
-  };
+  async function fetchSettings() {
+    const { data } = await supabase.from("settings").select("*").single();
+    if (data) {
+      setSpendingLimit(data.spending_limit || 10000);
+      setCategoryLimits(data.category_limits || {});
+    }
+  }
 
-  const loadData = async () => {
-    if (!user) return;
-    const [w, t, s] = await Promise.all([
-      supabase.from('wallet').select().eq('user_id', user.id).maybeSingle(),
-      supabase.from('transactions').select().eq('user_id', user.id).order('date', { ascending: false }),
-      supabase.from('settings').select().eq('user_id', user.id).maybeSingle(),
-    ]);
-    setWallet(w.data);
-    setTransactions(t.data || []);
-    setSettings(s.data);
-  };
+  function checkCategoryBudgets(txns: any[]) {
+    const now = new Date();
+    const monthTxns = txns.filter((t) => {
+      const d = new Date(t.date);
+      return t.type === "expense" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    const over: string[] = [];
+    Object.entries(categoryLimits).forEach(([category, limit]) => {
+      const spent = monthTxns.filter((t) => t.category === category).reduce((s, t) => s + t.amount, 0);
+      if (spent >= limit) over.push(category);
+    });
+    setOverBudgetCategories(over);
+  }
 
-  const now = new Date();
   const monthlyExpenses = transactions
-    .filter(t => t.type === 'expense' &&
-      new Date(t.date).getMonth() === now.getMonth() &&
-      new Date(t.date).getFullYear() === now.getFullYear())
-    .reduce((s, t) => s + Number(t.amount), 0);
+    .filter((t) => {
+      const d = new Date(t.date);
+      const now = new Date();
+      return t.type === "expense" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    })
+    .reduce((s, t) => s + t.amount, 0);
 
-  const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0);
-  const totalIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
-  const spendingPct = settings?.spending_limit > 0 ? Math.min(100, (monthlyExpenses / settings.spending_limit) * 100) : 0;
-  const savingsPct = settings?.savings_goal > 0 && wallet ? Math.min(100, (Number(wallet.savings_balance) / settings.savings_goal) * 100) : 0;
 
-  const isOverspending = settings?.spending_limit > 0 && monthlyExpenses > settings.spending_limit;
+  const isOverspending = monthlyExpenses > spendingLimit;
+  const spendingPercent = Math.min((monthlyExpenses / spendingLimit) * 100, 100);
 
-  // Category limit alerts
-  const catAlerts = settings?.category_limits
-    ? Object.entries(settings.category_limits).filter(([cat, limit]: any) => {
-      const spent = transactions.filter(t => t.type === 'expense' && t.category === cat).reduce((s: number, t: any) => s + Number(t.amount), 0);
-      return spent > limit;
-    }).map(([cat]) => cat)
-    : [];
+  const streak = (() => {
+    let days = 0;
+    const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const dayMap: Record<string, number> = {};
+    sorted.forEach((t) => {
+      const d = new Date(t.date).toDateString();
+      if (t.type === "expense") dayMap[d] = (dayMap[d] || 0) + t.amount;
+    });
+    const today = new Date();
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toDateString();
+      if (dayMap[key] && dayMap[key] > spendingLimit / 30) break;
+      days++;
+    }
+    return days;
+  })();
 
-  if (!wallet) return (
-    <div className="min-h-screen bg-[#0b0f19] flex items-center justify-center">
-      <div className="text-emerald-400 text-lg animate-pulse">Loading MindGuard...</div>
-    </div>
-  );
+  // Category spending for this month
+  const categorySpend: Record<string, number> = {};
+  transactions.forEach((t) => {
+    const d = new Date(t.date);
+    const now = new Date();
+    if (t.type === "expense" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+      categorySpend[t.category] = (categorySpend[t.category] || 0) + t.amount;
+    }
+  });
 
-  const totalBalance = Number(wallet.main_balance) + Number(wallet.savings_balance);
-
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'transactions', label: 'Transactions', icon: ArrowDownCircle },
-    { id: 'analytics', label: 'Analytics', icon: TrendingUp },
-    { id: 'savings', label: 'Savings', icon: PiggyBank },
-    { id: 'ai', label: 'AI Coach', icon: Bot },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  const navItems: { id: Page; label: string; icon: string }[] = [
+    { id: "dashboard", label: "Dashboard", icon: "🏠" },
+    { id: "transactions", label: "Transactions", icon: "📋" },
+    { id: "analytics", label: "Analytics", icon: "📊" },
+    { id: "savings", label: "Savings Vault", icon: "🔒" },
+    { id: "settings", label: "Settings", icon: "⚙️" },
   ];
 
-  const renderPage = () => {
-    switch (activePage) {
-      case 'dashboard':
-        return <DashboardHome
-          wallet={wallet} totalBalance={totalBalance} totalExpenses={totalExpenses}
-          totalIncome={totalIncome} monthlyExpenses={monthlyExpenses}
-          settings={settings} spendingPct={spendingPct} savingsPct={savingsPct}
-          isOverspending={isOverspending} catAlerts={catAlerts}
-          transactions={transactions}
-          onAddIncome={() => { setTransactionType('income'); setShowTransactionForm(true); }}
-          onAddExpense={() => { setTransactionType('expense'); setShowTransactionForm(true); }}
-          onManageSavings={() => setShowSavingsManager(true)}
-          onTopUpMain={() => setShowTopUp('main')}
-          onTopUpSavings={() => setShowTopUp('savings')}
-        />;
-      case 'transactions':
-        return <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-white text-xl font-bold">All Transactions</h2>
-            <div className="flex gap-2">
-              <button onClick={() => { setTransactionType('income'); setShowTransactionForm(true); }}
-                className="bg-emerald-500 px-3 py-2 rounded-lg text-black text-sm font-semibold flex items-center gap-1">
-                <Plus className="w-4 h-4" /> Income
-              </button>
-              <button onClick={() => { setTransactionType('expense'); setShowTransactionForm(true); }}
-                className="bg-red-500 px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1">
-                <Plus className="w-4 h-4" /> Expense
-              </button>
-            </div>
-          </div>
-          <TransactionList transactions={transactions} onDelete={loadData} />
-        </div>;
-      case 'analytics':
-        return <div className="space-y-6">
-          <h2 className="text-white text-xl font-bold">Analytics</h2>
-          <div className="bg-[#111827] rounded-xl p-5">
-            <h3 className="text-white font-semibold mb-4">Spending by Category</h3>
-            <SpendingChart transactions={transactions} />
-          </div>
-          <div className="bg-[#111827] rounded-xl p-5">
-            <h3 className="text-white font-semibold mb-4">Category Distribution</h3>
-            <div className="flex justify-center">
-              <CategoryPieChart transactions={transactions} />
-            </div>
-          </div>
-        </div>;
-      case 'savings':
-        return <div className="space-y-6">
-          <h2 className="text-white text-xl font-bold">Savings Vault 🔒</h2>
-          <div className="bg-[#111827] rounded-xl p-6 border border-amber-500/20">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-gray-400 text-sm">Locked Savings</p>
-                <p className="text-amber-400 text-4xl font-bold">{formatINR(Number(wallet.savings_balance))}</p>
-              </div>
-              <PiggyBank className="w-12 h-12 text-amber-400 opacity-50" />
-            </div>
-            {settings?.savings_goal > 0 && (
-              <>
-                <div className="flex justify-between text-xs text-gray-400 mb-1">
-                  <span>{savingsPct.toFixed(0)}% of goal</span>
-                  <span>Goal: {formatINR(settings.savings_goal)}</span>
-                </div>
-                <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${savingsPct}%` }} />
-                </div>
-              </>
-            )}
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowSavingsManager(true)}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 text-black py-3 rounded-lg font-semibold transition">
-                Manage Savings
-              </button>
-              <button onClick={() => setShowTopUp('savings')}
-                className="flex-1 bg-[#1f2937] hover:bg-[#374151] text-white py-3 rounded-lg font-semibold transition border border-amber-500/30">
-                + Direct Top-Up
-              </button>
-            </div>
-          </div>
-        </div>;
-      case 'ai':
-        return <div className="space-y-4">
-          <h2 className="text-white text-xl font-bold">AI Financial Coach 🤖</h2>
-          <div className="bg-[#111827] rounded-xl p-5">
-            <AICoach transactions={transactions} settings={settings} />
-          </div>
-        </div>;
-      case 'settings':
-        return <div className="space-y-4">
-          <h2 className="text-white text-xl font-bold">Settings</h2>
-          <div className="bg-[#111827] rounded-xl p-5">
-            <Settings settings={settings} onClose={() => { }} onComplete={() => { loadData(); }} inline />
-          </div>
-        </div>;
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-[#0b0f19] flex">
-
-      {/* ── Sidebar Overlay (mobile) ── */}
+    <div className="min-h-screen bg-gray-950 text-white flex">
+      {/* Overlay for mobile sidebar */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ── Sidebar ── */}
-      <aside className={`
-        fixed top-0 left-0 h-full w-64 bg-[#0d1117] border-r border-white/5 z-40 flex flex-col
-        transition-transform duration-300
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:flex
-      `}>
+      {/* SIDEBAR */}
+      <aside
+        className={`fixed top-0 left-0 h-full w-64 bg-gray-900 border-r border-gray-800 z-30 flex flex-col transform transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
+      >
         {/* Logo */}
-        <div className="p-5 border-b border-white/5 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <span className="text-black font-bold text-base">M</span>
-            </div>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-lg">🛡️</div>
             <div>
-              <p className="text-white font-bold text-base leading-tight">MindGuard</p>
-              <p className="text-gray-500 text-xs">Money</p>
+              <div className="font-bold text-white text-sm">MindGuard</div>
+              <div className="text-purple-400 text-xs font-medium">Money</div>
             </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Quick Actions */}
-        <div className="px-4 py-4 border-b border-white/5 space-y-2">
-          <p className="text-gray-600 text-xs uppercase tracking-widest mb-3">Quick Actions</p>
-          <button
-            onClick={() => { setTransactionType('income'); setShowTransactionForm(true); setSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg text-emerald-400 text-sm font-medium transition">
-            <ArrowUpCircle className="w-4 h-4" /> + Add Income
+        <div className="p-4 border-b border-gray-800 space-y-2">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Quick Actions</p>
+          <button onClick={() => { setShowAddIncome(true); setSidebarOpen(false); }}
+            className="w-full text-left px-3 py-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-400 text-sm flex items-center gap-2 transition-colors">
+            ➕ Add Income
           </button>
-          <button
-            onClick={() => { setTransactionType('expense'); setShowTransactionForm(true); setSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-red-400 text-sm font-medium transition">
-            <ArrowDownCircle className="w-4 h-4" /> + Add Expense
+          <button onClick={() => { setShowAddExpense(true); setSidebarOpen(false); }}
+            className="w-full text-left px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm flex items-center gap-2 transition-colors">
+            ➖ Add Expense
           </button>
-          <button
-            onClick={() => { setShowTopUp('main'); setSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg text-blue-400 text-sm font-medium transition">
-            <Wallet className="w-4 h-4" /> Top-Up Main Wallet
+          <button onClick={() => { setShowTopUp("main"); setSidebarOpen(false); }}
+            className="w-full text-left px-3 py-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-sm flex items-center gap-2 transition-colors">
+            💳 Top-Up Wallet
           </button>
-          <button
-            onClick={() => { setShowTopUp('savings'); setSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg text-amber-400 text-sm font-medium transition">
-            <PiggyBank className="w-4 h-4" /> Top-Up Savings
+          <button onClick={() => { setShowTopUp("savings"); setSidebarOpen(false); }}
+            className="w-full text-left px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-sm flex items-center gap-2 transition-colors">
+            🔒 Top-Up Savings
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          <p className="text-gray-600 text-xs uppercase tracking-widest px-2 mb-3">Navigation</p>
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button key={id}
-              onClick={() => { setActivePage(id as Page); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition
-                ${activePage === id
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              <Icon className="w-4 h-4" />
-              {label}
-              {id === 'savings' && savingsPct >= 100 && (
-                <span className="ml-auto text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded-full">✓</span>
-              )}
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { setCurrentPage(item.id); setSidebarOpen(false); }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition-all
+                ${currentPage === item.id
+                  ? "bg-purple-600 text-white font-medium"
+                  : "text-gray-400 hover:bg-gray-800 hover:text-white"}`}
+            >
+              <span>{item.icon}</span>
+              {item.label}
             </button>
           ))}
         </nav>
 
-        {/* User & Logout */}
-        <div className="p-4 border-t border-white/5">
-          <p className="text-gray-600 text-xs truncate mb-3">{user?.email}</p>
-          <button onClick={async () => { await signOut(); window.location.href = '/login'; }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition">
-            <LogOut className="w-4 h-4" /> Sign Out
+        {/* User footer */}
+        <div className="p-4 border-t border-gray-800">
+          <p className="text-xs text-gray-500 truncate mb-2">{user?.email}</p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="w-full text-left px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm transition-colors"
+          >
+            🚪 Sign Out
           </button>
         </div>
       </aside>
 
-      {/* ── Main Content ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="bg-[#0d1117] border-b border-white/5 px-5 py-4 flex items-center justify-between lg:px-8">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-400 hover:text-white">
-              <Menu className="w-6 h-6" />
-            </button>
-            <div>
-              <h1 className="text-white font-bold text-lg capitalize">
-                {activePage === 'ai' ? 'AI Coach' : activePage}
-              </h1>
-              <p className="text-gray-500 text-xs hidden sm:block">
-                {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
-            </div>
-          </div>
-          {/* Balance pill */}
-          <div className="bg-[#1f2937] rounded-xl px-4 py-2 text-right hidden sm:block">
-            <p className="text-gray-400 text-xs">Total Balance</p>
-            <p className="text-white font-bold">{formatINR(totalBalance)}</p>
-          </div>
+      {/* MAIN CONTENT */}
+      <div className="flex-1 lg:ml-64 min-h-screen flex flex-col">
+        {/* Top bar (mobile) */}
+        <header className="lg:hidden flex items-center justify-between p-4 bg-gray-900 border-b border-gray-800">
+          <button onClick={() => setSidebarOpen(true)} className="text-gray-400 hover:text-white text-xl">☰</button>
+          <span className="font-semibold text-sm">MindGuard Money</span>
+          <span className="text-purple-400">🛡️</span>
         </header>
 
-        {/* Alerts */}
-        {(isOverspending || catAlerts.length > 0) && (
-          <div className="px-5 pt-4 lg:px-8 space-y-2">
-            {isOverspending && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 flex items-center gap-3 text-red-400 text-sm">
-                <TrendingDown className="w-5 h-5 flex-shrink-0" />
-                <span>🚨 Monthly spending limit exceeded! You've spent {formatINR(monthlyExpenses)} of {formatINR(settings.spending_limit)}</span>
-              </div>
-            )}
-            {catAlerts.map(cat => (
-              <div key={cat} className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 text-amber-400 text-sm">
-                ⚠️ Category limit exceeded for <strong>{cat}</strong>
-              </div>
-            ))}
-          </div>
-        )}
+        <main className="flex-1 p-4 lg:p-6 max-w-6xl mx-auto w-full">
 
-        {/* Page Content */}
-        <main className="flex-1 p-5 lg:p-8 overflow-auto">
-          {renderPage()}
+          {/* ===== DASHBOARD PAGE ===== */}
+          {currentPage === "dashboard" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold">Dashboard</h1>
+                  <p className="text-gray-400 text-sm">Your financial overview</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-400">🔥 Streak</div>
+                  <div className="text-xl font-bold text-orange-400">{streak} days</div>
+                </div>
+              </div>
+
+              {/* OVERSPENDING ALERT */}
+              {isOverspending && (
+                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 flex items-center gap-3">
+                  <span className="text-2xl">🚨</span>
+                  <div>
+                    <p className="font-semibold">You are overspending this month!</p>
+                    <p className="text-sm text-red-400/70">Control your expenses. You've exceeded your ₹{spendingLimit.toLocaleString("en-IN")} limit.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* CATEGORY OVER-BUDGET ALERTS */}
+              {overBudgetCategories.length > 0 && (
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                  <p className="text-yellow-400 font-semibold">⚠️ Category Budget Exceeded</p>
+                  <p className="text-yellow-400/70 text-sm mt-1">
+                    You've overspent in: {overBudgetCategories.join(", ")}
+                  </p>
+                </div>
+              )}
+
+              {/* ── BALANCE CARDS ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* MAIN BALANCE */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-600/30 to-blue-700/20 border border-indigo-500/30">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-indigo-300 font-medium">💳 Main Balance</span>
+                    <button
+                      onClick={() => setShowTopUp("main")}
+                      className="text-xs px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 transition-colors"
+                    >
+                      + Top Up
+                    </button>
+                  </div>
+                  <div className="text-3xl font-bold text-white">{formatCurrency(wallet.main_balance)}</div>
+                  <p className="text-xs text-indigo-300/60 mt-2">Available for spending</p>
+                </div>
+
+                {/* SAVINGS BALANCE */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-600/30 to-violet-700/20 border border-purple-500/30">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-purple-300 font-medium">🔒 Savings Balance</span>
+                    <button
+                      onClick={() => setShowTopUp("savings")}
+                      className="text-xs px-2 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/40 text-purple-300 transition-colors"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  <div className="text-3xl font-bold text-white">{formatCurrency(wallet.savings_balance)}</div>
+                  <p className="text-xs text-purple-300/60 mt-2">Protected savings 🛡️</p>
+                </div>
+              </div>
+
+              {/* STATS ROW */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-gray-900 border border-gray-800">
+                  <p className="text-xs text-gray-500 mb-1">Main Balance</p>
+                  <p className="text-lg font-bold text-emerald-400">{formatCurrency(wallet.main_balance)}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-gray-900 border border-gray-800">
+                  <p className="text-xs text-gray-500 mb-1">This Month's Spend</p>
+                  <p className={`text-lg font-bold ${isOverspending ? "text-red-400" : "text-orange-400"}`}>
+                    {formatCurrency(monthlyExpenses)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl bg-gray-900 border border-gray-800 col-span-2 sm:col-span-1">
+                  <p className="text-xs text-gray-500 mb-1">Total Savings</p>
+                  <p className="text-lg font-bold text-amber-400">
+                    {formatCurrency(wallet.savings_balance)}
+                  </p>
+                </div>
+              </div>
+
+              {/* MONTHLY SPENDING LIMIT BAR */}
+              <div className="p-4 rounded-xl bg-gray-900 border border-gray-800">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-400">Monthly Spending Limit</span>
+                  <span className={isOverspending ? "text-red-400" : "text-gray-300"}>
+                    {formatCurrency(monthlyExpenses)} / {formatCurrency(spendingLimit)}
+                  </span>
+                </div>
+                <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${spendingPercent >= 100 ? "bg-red-500" : spendingPercent >= 75 ? "bg-yellow-500" : "bg-green-500"
+                      }`}
+                    style={{ width: `${spendingPercent}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">{Math.round(spendingPercent)}% of monthly budget used</p>
+              </div>
+
+              {/* CATEGORY BUDGET CARDS */}
+              <div>
+                <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Category Budgets</h2>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  {CATEGORIES.filter((c: any) => c.type === "expense").map((cat: any) => {
+                    const limit = categoryLimits[cat.name] || cat.defaultLimit || 0;
+                    const spent = categorySpend[cat.name] || 0;
+                    const pct = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+                    const over = spent > limit && limit > 0;
+                    return (
+                      <div key={cat.name} className={`p-4 rounded-xl border ${over ? "bg-red-500/10 border-red-500/30" : "bg-gray-900 border-gray-800"}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-base">{cat.emoji}</span>
+                          {over && <span className="text-xs text-red-400">Over!</span>}
+                        </div>
+                        <p className="text-sm font-medium text-white">{cat.name}</p>
+                        <p className="text-xs text-gray-400 mb-2">{formatCurrency(spent)} / {formatCurrency(limit)}</p>
+                        <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${over ? "bg-red-500" : pct >= 75 ? "bg-yellow-500" : "bg-green-500"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* RECENT TRANSACTIONS */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Recent Transactions</h2>
+                  <button onClick={() => setCurrentPage("transactions")} className="text-xs text-purple-400 hover:text-purple-300">View all →</button>
+                </div>
+                <div className="space-y-2">
+                  {transactions.slice(0, 5).map((t) => (
+                    <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-900 border border-gray-800">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{CATEGORIES.find((c: any) => c.name === t.category)?.emoji || (t.type === "income" ? "💰" : "💸")}</span>
+                        <div>
+                          <p className="text-sm font-medium">{t.category}</p>
+                          <p className="text-xs text-gray-500">{new Date(t.date).toLocaleDateString("en-IN")}</p>
+                        </div>
+                      </div>
+                      <span className={`text-sm font-semibold ${t.type === "income" ? "text-green-400" : "text-red-400"}`}>
+                        {t.type === "income" ? "+" : "-"}{formatCurrency(t.amount)}
+                      </span>
+                    </div>
+                  ))}
+                  {transactions.length === 0 && (
+                    <p className="text-center text-gray-600 py-8">No transactions yet. Add your first one!</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== OTHER PAGES ===== */}
+          {currentPage === "transactions" && (
+            <TransactionList
+              transactions={transactions}
+              onEdit={(t: any) => setEditingTransaction(t)}
+              onRefresh={fetchAll}
+            />
+          )}
+          {currentPage === "analytics" && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold">Analytics</h1>
+              <SpendingChart transactions={transactions} />
+              <CategoryPieChart transactions={transactions} />
+            </div>
+          )}
+          {currentPage === "savings" && (
+            <SavingsManager 
+              wallet={wallet} 
+              onClose={() => setCurrentPage("dashboard")} 
+              onComplete={fetchAll} 
+            />
+          )}
+          {currentPage === "settings" && (
+            <Settings
+              settings={{ spending_limit: spendingLimit, category_limits: categoryLimits }}
+              onClose={() => setCurrentPage("dashboard")}
+              onComplete={() => { fetchSettings(); setCurrentPage("dashboard"); }}
+            />
+          )}
         </main>
       </div>
 
-      {/* ── Modals ── */}
-      {showTransactionForm && (
-        <TransactionForm type={transactionType}
-          onClose={() => setShowTransactionForm(false)}
-          onComplete={() => { loadData(); setShowTransactionForm(false); }}
-          settings={settings} transactions={transactions}
-        />
-      )}
-      {showSavingsManager && wallet && (
-        <SavingsManager wallet={wallet}
-          onClose={() => setShowSavingsManager(false)}
-          onComplete={() => { loadData(); setShowSavingsManager(false); }}
-        />
-      )}
+      {/* ===== MODALS ===== */}
       {showTopUp && (
-        <QuickTopUp type={showTopUp} wallet={wallet}
+        <QuickTopUp
+          type={showTopUp}
+          wallet={wallet}
           onClose={() => setShowTopUp(null)}
-          onComplete={() => { loadData(); setShowTopUp(null); }}
+          onComplete={() => { fetchAll(); setShowTopUp(null); }}
         />
       )}
-    </div>
-  );
-}
-
-/* ─── Dashboard Home ─────────────────────────────────── */
-function DashboardHome({ wallet, totalBalance, totalExpenses, totalIncome, monthlyExpenses, settings, spendingPct, savingsPct, isOverspending, catAlerts, transactions, onAddIncome, onAddExpense, onManageSavings, onTopUpMain, onTopUpSavings }: any) {
-  return (
-    <div className="space-y-6">
-
-      {/* Hero Balance */}
-      <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 rounded-2xl p-6">
-        <p className="text-gray-400 text-sm mb-1">Total Balance</p>
-        <p className="text-white text-5xl font-bold mb-4">{formatINR(totalBalance)}</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-black/20 rounded-xl p-3">
-            <p className="text-gray-400 text-xs">Main Wallet</p>
-            <p className="text-emerald-400 text-lg font-bold">{formatINR(wallet.main_balance)}</p>
-            <button onClick={onTopUpMain} className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Top-Up
-            </button>
-          </div>
-          <div className="bg-black/20 rounded-xl p-3">
-            <p className="text-gray-400 text-xs">Savings 🔒</p>
-            <p className="text-amber-400 text-lg font-bold">{formatINR(wallet.savings_balance)}</p>
-            <button onClick={onTopUpSavings} className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Top-Up
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard label="This Month Spent" value={formatINR(monthlyExpenses)}
-          sub={`of ${formatINR(settings?.spending_limit || 0)} limit`}
-          color={isOverspending ? 'red' : 'emerald'} />
-        <StatCard label="Total Income" value={formatINR(totalIncome)} color="emerald" />
-        <StatCard label="Total Expenses" value={formatINR(totalExpenses)} color="red" />
-      </div>
-
-      {/* Progress Bars */}
-      <div className="grid sm:grid-cols-2 gap-4">
-        <ProgressCard
-          title="Monthly Spending Limit"
-          pct={spendingPct} spent={monthlyExpenses}
-          limit={settings?.spending_limit || 0}
-          colorClass={spendingPct >= 100 ? 'bg-red-500' : spendingPct >= 80 ? 'bg-yellow-400' : 'bg-emerald-500'}
-        />
-        <ProgressCard
-          title="Savings Goal"
-          pct={savingsPct} spent={wallet.savings_balance}
-          limit={settings?.savings_goal || 0}
-          colorClass="bg-amber-400"
-          labelLeft={`₹${wallet.savings_balance.toFixed(0)} saved`}
-          labelRight={`Goal: ₹${(settings?.savings_goal || 0).toFixed(0)}`}
-        />
-      </div>
-
-      {/* Category limits */}
-      {settings?.category_limits && Object.keys(settings.category_limits).length > 0 && (
-        <div className="bg-[#111827] rounded-xl p-5">
-          <h3 className="text-white font-semibold mb-4">Category Budgets</h3>
-          <div className="space-y-3">
-            {Object.entries(settings.category_limits).map(([cat, limit]: any) => {
-              const spent = transactions.filter((t: any) => t.type === 'expense' && t.category === cat).reduce((s: number, t: any) => s + Number(t.amount), 0);
-              const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
-              const EMOJIS: any = { Snacks: '🍿', Food: '🍽️', Academics: '📚', Beauty: '💄', Household: '🏠' };
-              return (
-                <div key={cat}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-300">{EMOJIS[cat] || '💰'} {cat}</span>
-                    <span className={pct >= 100 ? 'text-red-400 font-semibold' : 'text-gray-400'}>
-                      {formatINR(spent)} / {formatINR(limit)}
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-yellow-400' : 'bg-emerald-500'}`}
-                      style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
+      {showAddIncome && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-md relative">
+            <button onClick={() => setShowAddIncome(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-xl">✕</button>
+            <TransactionForm type="income" onComplete={() => { fetchAll(); setShowAddIncome(false); }} onClose={() => setShowAddIncome(false)} />
           </div>
         </div>
       )}
-
-      {/* Recent Transactions (last 5) */}
-      <div className="bg-[#111827] rounded-xl p-5">
-        <h3 className="text-white font-semibold mb-4">Recent Activity</h3>
-        {transactions.length === 0
-          ? <p className="text-gray-500 text-sm">No transactions yet</p>
-          : transactions.slice(0, 5).map((t: any) => (
-            <div key={t.id} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${t.type === 'income' ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
-                  {t.type === 'income' ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
-                </div>
-                <div>
-                  <p className="text-white text-sm font-medium">{t.category}</p>
-                  {t.description && <p className="text-gray-500 text-xs">{t.description}</p>}
-                </div>
-              </div>
-              <p className={`text-sm font-bold ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
-                {t.type === 'income' ? '+' : '-'}{formatINR(Number(t.amount))}
-              </p>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, sub, color }: any) {
-  return (
-    <div className="bg-[#111827] rounded-xl p-4 border border-white/5">
-      <p className="text-gray-400 text-xs mb-1">{label}</p>
-      <p className={`text-lg font-bold ${color === 'red' ? 'text-red-400' : 'text-emerald-400'}`}>{value}</p>
-      {sub && <p className="text-gray-600 text-xs mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
-function ProgressCard({ title, pct, spent, limit, colorClass, labelLeft, labelRight }: any) {
-  const fmtINR = (n: number) => n.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 });
-  return (
-    <div className="bg-[#111827] rounded-xl p-4 border border-white/5">
-      <div className="flex justify-between items-center mb-2">
-        <p className="text-gray-300 text-sm font-medium">{title}</p>
-        <span className={`text-xs font-bold ${pct >= 100 ? 'text-red-400' : 'text-gray-400'}`}>{pct.toFixed(0)}%</span>
-      </div>
-      <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden mb-2">
-        <div className={`h-full rounded-full transition-all ${colorClass}`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="flex justify-between text-xs text-gray-500">
-        <span>{labelLeft || fmtINR(spent) + ' spent'}</span>
-        <span>{labelRight || fmtINR(limit) + ' limit'}</span>
-      </div>
+      {showAddExpense && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-md relative">
+            <button onClick={() => setShowAddExpense(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white text-xl">✕</button>
+            <TransactionForm type="expense" onComplete={() => { fetchAll(); setShowAddExpense(false); }} onClose={() => setShowAddExpense(false)} />
+          </div>
+        </div>
+      )}
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onComplete={() => { fetchAll(); setEditingTransaction(null); }}
+        />
+      )}
     </div>
   );
 }

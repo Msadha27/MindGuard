@@ -26,7 +26,14 @@ export function Login() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-[#0b0f19]">
 
-            <div className="bg-[#111827] p-8 rounded-2xl w-80 space-y-5 shadow-xl border border-white/10">
+            <div className="bg-[#111827] p-8 rounded-2xl w-80 space-y-5 shadow-xl border border-white/10 relative">
+                {/* 🏠 BACK TO HOME */}
+                <button 
+                  onClick={() => navigate('/')}
+                  className="absolute -top-12 left-0 text-gray-500 hover:text-emerald-400 text-sm flex items-center gap-1 transition-colors"
+                >
+                  ← Back to Home
+                </button>
 
                 {/* 🔥 LOGO + BRAND */}
                 <div className="flex flex-col items-center gap-2">

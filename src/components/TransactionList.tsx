@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { TrendingUp, TrendingDown, Trash2, Pencil } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatINR } from '../utils/currency';
-import { EditTransactionModal } from './EditTransactionModal';
 
 const CAT_EMOJI: Record<string, string> = {
   Snacks: '🍿', Food: '🍽️', Academics: '📚', Beauty: '💄', Household: '🏠',
@@ -13,9 +11,8 @@ const CAT_EMOJI: Record<string, string> = {
   Selling: '🏷️', 'Family Transfer': '🏠', 'Wallet Top-Up': '💳', 'Savings Top-Up': '🏦',
 };
 
-export function TransactionList({ transactions, onDelete, onEdit }: { transactions: any[]; onDelete?: () => void; onEdit?: () => void; }) {
+export function TransactionList({ transactions, onRefresh, onEdit }: { transactions: any[]; onRefresh?: () => void; onEdit?: (t: any) => void; }) {
   const { user } = useAuth();
-  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
 
   const handleDelete = async (t: any) => {
     if (!user || !confirm('Delete this transaction? Balance will be reversed.')) return;
@@ -25,7 +22,7 @@ export function TransactionList({ transactions, onDelete, onEdit }: { transactio
       const newBal = t.type === 'income' ? Number(wallet.main_balance) - Number(t.amount) : Number(wallet.main_balance) + Number(t.amount);
       await supabase.from('wallet').update({ main_balance: newBal }).eq('user_id', user.id);
       await supabase.from('transactions').delete().eq('id', t.id);
-      onDelete?.();
+      onRefresh?.();
     } catch { alert('Error deleting'); }
   };
 
@@ -38,42 +35,35 @@ export function TransactionList({ transactions, onDelete, onEdit }: { transactio
   );
 
   return (
-    <>
-      <div className="bg-[#111827] rounded-xl overflow-hidden border border-white/5 divide-y divide-white/5">
-        {transactions.map((t) => {
-          const emoji = CAT_EMOJI[t.category];
-          return (
-            <div key={t.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition group">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg ${t.type === 'income' ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
-                {emoji ? <span>{emoji}</span> : t.type === 'income' ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-semibold leading-tight">{t.category}</p>
-                {t.description && t.description !== t.category && <p className="text-gray-500 text-xs truncate mt-0.5">{t.description}</p>}
-                <p className="text-gray-600 text-xs mt-0.5">{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-              </div>
-              <p className={`font-bold text-sm flex-shrink-0 ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
-                {t.type === 'income' ? '+' : '-'}{formatINR(Number(t.amount))}
-              </p>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
-                <button onClick={() => setEditingTransaction(t)} title="Edit"
-                  className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => handleDelete(t)} title="Delete"
-                  className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+    <div className="bg-[#111827] rounded-xl overflow-hidden border border-white/5 divide-y divide-white/5">
+      {transactions.map((t) => {
+        const emoji = CAT_EMOJI[t.category];
+        return (
+          <div key={t.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition group">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg ${t.type === 'income' ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
+              {emoji ? <span>{emoji}</span> : t.type === 'income' ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
             </div>
-          );
-        })}
-      </div>
-      {editingTransaction && (
-        <EditTransactionModal transaction={editingTransaction}
-          onClose={() => setEditingTransaction(null)}
-          onComplete={() => { setEditingTransaction(null); onDelete?.(); }} />
-      )}
-    </>
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-semibold leading-tight">{t.category}</p>
+              {t.description && t.description !== t.category && <p className="text-gray-500 text-xs truncate mt-0.5">{t.description}</p>}
+              <p className="text-gray-600 text-xs mt-0.5">{new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+            </div>
+            <p className={`font-bold text-sm flex-shrink-0 ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+              {t.type === 'income' ? '+' : '-'}{formatINR(Number(t.amount))}
+            </p>
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+              <button onClick={() => onEdit?.(t)} title="Edit"
+                className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleDelete(t)} title="Delete"
+                className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

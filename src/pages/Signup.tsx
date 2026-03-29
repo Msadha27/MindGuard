@@ -17,7 +17,14 @@ export function Signup() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-[#0b0f19]">
 
-            <div className="bg-[#111827] p-8 rounded-xl w-80 space-y-4">
+            <div className="bg-[#111827] p-8 rounded-xl w-80 space-y-4 relative">
+                {/* 🏠 BACK TO HOME */}
+                <button 
+                  onClick={() => navigate('/')}
+                  className="absolute -top-12 left-0 text-gray-500 hover:text-emerald-400 text-sm flex items-center gap-1 transition-colors"
+                >
+                  ← Back to Home
+                </button>
 
                 <h2 className="text-white text-xl font-bold">Sign Up</h2>
 
