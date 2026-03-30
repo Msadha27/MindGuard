@@ -17,7 +17,26 @@ export function TransactionList({ transactions, onRefresh, onEdit }: { transacti
   const handleDelete = async (t: any) => {
     if (!user || !confirm('Delete this transaction? Balance will be reversed.')) return;
     try {
-      const { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+      let { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+      
+      if (!wallet) {
+        // 🔥 create wallet automatically
+        await supabase.from('wallet').insert({
+          user_id: user.id,
+          main_balance: 0,
+          savings_balance: 0,
+        });
+
+        // refetch wallet
+        const { data: newWallet } = await supabase
+          .from('wallet')
+          .select()
+          .eq('user_id', user.id)
+          .single();
+
+        wallet = newWallet;
+      }
+
       if (!wallet) return;
       const newBal = t.type === 'income' ? Number(wallet.main_balance) - Number(t.amount) : Number(wallet.main_balance) + Number(t.amount);
       await supabase.from('wallet').update({ main_balance: newBal }).eq('user_id', user.id);

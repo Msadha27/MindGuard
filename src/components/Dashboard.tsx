@@ -53,8 +53,27 @@ export default function Dashboard({ user }: { user: any }) {
   }
 
   async function fetchWallet() {
-    const { data } = await supabase.from("wallet").select("*").single();
-    if (data) setWallet(data);
+    let { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+    
+    if (!wallet) {
+      // 🔥 create wallet automatically
+      await supabase.from('wallet').insert({
+        user_id: user.id,
+        main_balance: 0,
+        savings_balance: 0,
+      });
+
+      // refetch wallet
+      const { data: newWallet } = await supabase
+        .from('wallet')
+        .select()
+        .eq('user_id', user.id)
+        .single();
+
+      wallet = newWallet;
+    }
+
+    if (wallet) setWallet(wallet);
   }
 
   async function fetchTransactions() {

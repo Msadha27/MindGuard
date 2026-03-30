@@ -81,11 +81,25 @@ export function EditTransactionModal({ transaction, onClose, onComplete }: EditT
                 : category;
 
             // ── Adjust wallet balance for the difference ──
-            const { data: wallet } = await supabase
-                .from('wallet')
-                .select()
-                .eq('user_id', user.id)
-                .maybeSingle();
+            let { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+            
+            if (!wallet) {
+                // 🔥 create wallet automatically
+                await supabase.from('wallet').insert({
+                    user_id: user.id,
+                    main_balance: 0,
+                    savings_balance: 0,
+                });
+
+                // refetch wallet
+                const { data: newWallet } = await supabase
+                    .from('wallet')
+                    .select()
+                    .eq('user_id', user.id)
+                    .single();
+
+                wallet = newWallet;
+            }
 
             if (!wallet) { setError('Wallet not found'); setLoading(false); return; }
 

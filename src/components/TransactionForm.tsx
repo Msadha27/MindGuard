@@ -92,7 +92,26 @@ export function TransactionForm({ type, onClose, onComplete, settings, transacti
       const numAmount = parseFloat(amount);
       if (!numAmount || numAmount <= 0) { setError('Enter a valid amount'); setLoading(false); return; }
 
-      const { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+      let { data: wallet } = await supabase.from('wallet').select().eq('user_id', user.id).maybeSingle();
+      
+      if (!wallet) {
+        // 🔥 create wallet automatically
+        await supabase.from('wallet').insert({
+          user_id: user.id,
+          main_balance: 0,
+          savings_balance: 0,
+        });
+
+        // refetch wallet
+        const { data: newWallet } = await supabase
+          .from('wallet')
+          .select()
+          .eq('user_id', user.id)
+          .single();
+
+        wallet = newWallet;
+      }
+
       if (!wallet) { setError('Wallet not found'); setLoading(false); return; }
 
       if (type === 'expense' && Number(wallet.main_balance) < numAmount) {

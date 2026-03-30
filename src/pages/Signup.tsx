@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
 export function Signup() {
@@ -10,8 +11,17 @@ export function Signup() {
     const [password, setPassword] = useState('');
 
     const handleSignup = async () => {
-        const { error } = await signUp(email, password);
-        if (!error) navigate('/dashboard');
+        const { data, error } = await signUp(email, password);
+
+        if (!error && data.user) {
+            await supabase.from('wallet').insert({
+                user_id: data.user.id,
+                main_balance: 0,
+                savings_balance: 0,
+            });
+
+            navigate('/dashboard');
+        }
     };
 
     return (
@@ -19,11 +29,11 @@ export function Signup() {
 
             <div className="bg-[#111827] p-8 rounded-xl w-80 space-y-4 relative">
                 {/* 🏠 BACK TO HOME */}
-                <button 
-                  onClick={() => navigate('/')}
-                  className="absolute -top-12 left-0 text-gray-500 hover:text-emerald-400 text-sm flex items-center gap-1 transition-colors"
+                <button
+                    onClick={() => navigate('/')}
+                    className="absolute -top-12 left-0 text-gray-500 hover:text-emerald-400 text-sm flex items-center gap-1 transition-colors"
                 >
-                  ← Back to Home
+                    ← Back to Home
                 </button>
 
                 <h2 className="text-white text-xl font-bold">Sign Up</h2>
